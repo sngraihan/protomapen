@@ -55,7 +55,10 @@ export default function Home() {
     setResult(null);
 
     try {
-      const response = await fetch("/api/predict", {
+      // Dapatkan URL dasar (lokal atau domain Vercel)
+      const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
+      
+      const response = await fetch(`${baseUrl}/api/predict`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
