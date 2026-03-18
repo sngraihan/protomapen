@@ -1,54 +1,66 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+from http.server import BaseHTTPRequestHandler
+import json
+import sys
+import os
+
+# Tambahkan direktori api/ ke path agar bisa import inference.py
+sys.path.append(os.path.dirname(__file__))
 from inference import run_inference
 
-app = Flask(__name__)
-# Aktifkan CORS agar frontend (Next.js) bisa me-request API ini dari origin/port yang berbeda
-CORS(app)
+class handler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        try:
+            # Baca body request
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length)
+            data = json.loads(body)
 
-@app.route('/api/predict', methods=['POST'])
-def predict():
-    try:
-        # Menangkap data JSON yang dikirimkan oleh frontend
-        data = request.json
-        
-        # Ekstrak data
-        gdp_val = data.get('gdp', 0)
-        gds_val = data.get('gds', 0)
-        preg_val = data.get('preg', False)
-        
-        # Ekstrak dictionary gejala yang dikirim
-        gejala_vals = data.get('gejala', {})
+            # Ekstrak data dari request
+            gdp_val = data.get('gdp', 0)
+            gds_val = data.get('gds', 0)
+            preg_val = data.get('preg', False)
+            gejala_vals = data.get('gejala', {})
 
-        # Panggil fungsi inference dari inference.py
-        result = run_inference(gdp_val, gds_val, preg_val, gejala_vals)
-        
-        # Urutkan hasil dari CF yang tertinggi ke terendah
-        sorted_result = sorted(result.items(), key=lambda item: item[1], reverse=True)
-        
-        # Ambil diagnosis akhir (yang terbesar)
-        if sorted_result:
-            diagnosis_akhir = sorted_result[0][0]
-            nilai_cf = sorted_result[0][1]
-        else:
-            diagnosis_akhir = "Tidak diketahui"
-            nilai_cf = 0.0
+            # Jalankan inference
+            result = run_inference(gdp_val, gds_val, preg_val, gejala_vals)
 
-        # Kembalikan response dalam bentuk JSON
-        response = {
-            "status": "success",
-            "diagnosis_akhir": diagnosis_akhir,
-            "nilai_cf": nilai_cf,
-            "detail_hasil": dict(sorted_result)
-        }
-        return jsonify(response)
+            # Urutkan hasil dari CF tertinggi ke terendah
+            sorted_result = sorted(result.items(), key=lambda item: item[1], reverse=True)
 
-    except Exception as e:
-        return jsonify({
-            "status": "error",
-            "message": str(e)
-        }), 400
+            if sorted_result:
+                diagnosis_akhir = sorted_result[0][0]
+                nilai_cf = sorted_result[0][1]
+            else:
+                diagnosis_akhir = "Tidak diketahui"
+                nilai_cf = 0.0
 
-if __name__ == '__main__':
-    # Jalankan server API Flask di port 5000
-    app.run(port=5000)
+            response = {
+                "status": "success",
+                "diagnosis_akhir": diagnosis_akhir,
+                "nilai_cf": nilai_cf,
+                "detail_hasil": dict(sorted_result)
+            }
+
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(response).encode())
+
+        except Exception as e:
+            error_response = {
+                "status": "error",
+                "message": str(e)
+            }
+            self.send_response(400)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(error_response).encode())
+
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.end_headers()
